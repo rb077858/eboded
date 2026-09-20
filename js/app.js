@@ -102,6 +102,8 @@
   function personSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="2"/><path d="M5 20c1.2-4 4-6 7-6s5.8 2 7 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'; }
   function logoutSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M12 4H6a2 2 0 00-2 2v12a2 2 0 002 2h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
   function eyeSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px; margin-left:4px;"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>'; }
+  function listSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  function editSvg(){ return '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" style="vertical-align:-2px; margin-left:4px;"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
   function gearSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.04 1.56V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.04-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.04H3a2 2 0 010-4h.09A1.7 1.7 0 004.6 9a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.6a1.7 1.7 0 001.04-1.56V3a2 2 0 014 0v.09A1.7 1.7 0 0015 4.6a1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.4 9a1.7 1.7 0 001.56 1.04H21a2 2 0 010 4h-.09A1.7 1.7 0 0019.4 15z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
   function googleSvg(){ return '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 16 4 9.1 8.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.1-5.5l-6.5-5.5C29.5 34.7 26.9 35.7 24 35.7c-5.2 0-9.6-3.3-11.2-7.9l-6.6 5.1C9 39.6 15.9 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.6l6.5 5.5C41.6 36.4 44 30.7 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>'; }
   function qrSvg(muted){
@@ -195,6 +197,8 @@
       case 'openRequests': body = screenOpenRequests(); break;
       case 'volunteerList': body = screenVolunteerList(); break;
       case 'manageUsers': body = screenManageUsers(); break;
+      case 'allRequests': body = screenAllRequests(); break;
+      case 'editRequest': body = screenEditRequest(top.params); break;
       case 'profile': body = screenProfile(top.params); break;
       case 'sendRequest': body = screenSendRequest(top.params); break;
       case 'scan': body = screenScan(top.params); break;
@@ -283,6 +287,7 @@
   // ================= SCREEN — volunteer list (staff home) =================
   function screenVolunteerList(){
     var actions = '<button class="icon-btn" data-action="new-request" aria-label="בקשה חדשה">'+plusSvg()+'</button>' +
+                  '<button class="icon-btn" data-action="go-all-requests" aria-label="כל הבקשות">'+listSvg()+'</button>' +
                   '<button class="icon-btn" data-action="go-hours" aria-label="סיכום שעות">'+statsSvg()+'</button>' +
                   (!state.previewRole && isManager() ? '<button class="icon-btn" data-action="go-manage-users" aria-label="ניהול משתמשים">'+gearSvg()+'</button>' : '') +
                   (!state.previewRole ? '<button class="icon-btn" data-action="do-logout" aria-label="התנתקות">'+logoutSvg()+'</button>' : '');
@@ -376,6 +381,66 @@
         (controls ? '<div class="card-row" style="margin-top:4px;">'+controls+'</div>' : '') +
       '</div>' +
     '</div>';
+  }
+
+  // ================= SCREEN — all requests (admin / manager) =================
+  function screenAllRequests(){
+    var html = header('כל הבקשות שנשלחו', {back:true, sub:'ניהול, עריכה ומחיקה של בקשות'});
+    var body = '';
+    if(!state.requestsLoaded){
+      body += '<div class="empty"><b>טוען בקשות…</b></div>';
+    } else if(state.requests.length===0){
+      body += '<div class="empty">📋<b>עדיין לא נשלחו בקשות</b><span>בקשות שתפרסמו יופיעו כאן.</span></div>';
+    } else {
+      body += state.requests.map(function(r){ return allRequestCard(r); }).join('');
+    }
+    return wrapScreen(html, body);
+  }
+  function allRequestCard(r){
+    var langChip = r.language ? '<span class="chip chip-primary">שפה: '+esc(r.language)+'</span>' : '';
+    var genderTxt = r.gender==='female' ? 'אישה' : (r.gender==='male' ? 'גבר' : '');
+    var claimedInfo = r.claimedByName ? '<div class="card-row"><span class="small">משובץ/ת:</span><span class="chip chip-accent">'+esc(r.claimedByName)+'</span></div>' : '';
+    var meta = '<span class="small">נפתח '+fmtDT(r.createdAt)+(r.createdBy?' על ידי '+esc(r.createdBy):'')+'</span>';
+    var busy = !!state.busy['delreq-'+r.id];
+    return (
+      '<div class="card">' +
+        '<div class="card-row"><span class="card-title">'+esc(r.department||'')+'</span><span class="spacer"></span>'+statusBadge(r.status)+'</div>' +
+        '<div class="card-row">' +
+          (r.patientLabel? '<span class="chip">מזהה: '+esc(r.patientLabel)+'</span>' : '') +
+          (genderTxt || r.age ? '<span class="chip chip-accent">'+esc(genderTxt)+(r.age?(genderTxt?' &middot; ':'')+'בן/בת '+esc(String(r.age)):'')+'</span>' : '') +
+          langChip +
+        '</div>' +
+        (r.note ? '<p class="small">'+esc(r.note)+'</p>' : '') +
+        claimedInfo +
+        meta +
+        '<div class="card-row" style="margin-top:4px; gap:8px;">' +
+          '<button type="button" class="btn btn-outline btn-sm" style="flex:1;" data-action="edit-request" data-id="'+r.id+'">'+editSvg()+'עריכה</button>' +
+          '<button type="button" class="btn btn-danger btn-sm" style="flex:1;" data-action="delete-request" data-id="'+r.id+'" '+(busy?'disabled':'')+'>'+(busy?'מוחקים…':'מחיקה')+'</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  // ================= SCREEN — edit request (admin / manager) =================
+  function screenEditRequest(params){
+    var r = state.requests.find(function(x){ return x.id===params.requestId; });
+    var html = header('עריכת בקשה', {back:true});
+    if(!r){
+      return wrapScreen(html, '<div class="empty"><b>הבקשה לא נמצאה</b></div>');
+    }
+    var body = '<div class="card-flat"><form data-form="edit-request">' +
+        '<input type="hidden" name="requestId" value="'+esc(r.id)+'">' +
+        '<div class="field"><label for="er-dept">מחלקה</label><select id="er-dept" name="department" required>' + DEPARTMENTS.map(function(d){return '<option value="'+esc(d)+'" '+(r.department===d?'selected':'')+'>'+esc(d)+'</option>';}).join('') + '</select></div>' +
+        '<div class="field" style="margin-top:12px;"><label for="er-patient">מזהה חולה (מספר חדר / תיוג)</label><input id="er-patient" name="patientLabel" type="text" required value="'+esc(r.patientLabel||'')+'"></div>' +
+        '<div class="card-row" style="margin-top:12px; gap:10px;">' +
+          '<div class="field" style="flex:1;"><label for="er-age">גיל</label><input id="er-age" name="age" type="number" min="0" max="120" required value="'+esc(r.age!=null?String(r.age):'')+'"></div>' +
+          '<div class="field" style="flex:1;"><label for="er-gender">מגדר</label><select id="er-gender" name="gender" required><option value="female" '+(r.gender==='female'?'selected':'')+'>אישה</option><option value="male" '+(r.gender==='male'?'selected':'')+'>גבר</option></select></div>' +
+        '</div>' +
+        '<div class="field" style="margin-top:12px;"><label for="er-lang">שפה מועדפת</label><select id="er-lang" name="language" required>' + LANGUAGES.map(function(l){return '<option value="'+esc(l)+'" '+(r.language===l?'selected':'')+'>'+esc(l)+'</option>';}).join('') + '</select></div>' +
+        '<div class="field" style="margin-top:12px;"><label for="er-note">הערה</label><textarea id="er-note" name="note" rows="3">'+esc(r.note||'')+'</textarea></div>' +
+        '<button type="submit" class="btn btn-primary btn-block" style="margin-top:14px;">שמירת שינויים</button>' +
+      '</form></div>';
+    return wrapScreen(html, body);
   }
 
   // ================= SCREEN — volunteer profile =================
@@ -692,6 +757,46 @@
     });
   }
 
+  function submitEditRequest(form){
+    if(guardPreview()) return;
+    var fd = new FormData(form);
+    var id = (fd.get('requestId')||'').toString();
+    var department = (fd.get('department')||'').toString();
+    var patientLabel = (fd.get('patientLabel')||'').toString().trim();
+    var age = parseInt(fd.get('age'),10);
+    var gender = (fd.get('gender')||'').toString();
+    var language = (fd.get('language')||'').toString();
+    var note = (fd.get('note')||'').toString().trim();
+    if(!id || !department || !patientLabel || !gender || !language || isNaN(age)){
+      toast('נא למלא את כל השדות הנדרשים');
+      return;
+    }
+    var btn = form.querySelector('button[type="submit"]');
+    if(btn) btn.disabled = true;
+    db.collection('requests').doc(id).update({
+      department: department, patientLabel: patientLabel, age: age, gender: gender, language: language, note: note
+    }).then(function(){
+      toast('הבקשה עודכנה');
+      goBack();
+    }).catch(function(){
+      toast('העדכון נכשל, נסו שוב');
+      if(btn) btn.disabled = false;
+    });
+  }
+
+  function deleteRequest(id){
+    if(guardPreview()) return;
+    if(state.busy['delreq-'+id]) return;
+    setBusy('delreq-'+id, true); render();
+    db.collection('requests').doc(id).delete().then(function(){
+      toast('הבקשה נמחקה');
+      setBusy('delreq-'+id, false);
+    }).catch(function(){
+      toast('המחיקה נכשלה, אין הרשאה מספקת');
+      setBusy('delreq-'+id, false); render();
+    });
+  }
+
   // ---------------- actions: user management ----------------
   function setUserRole(uid, role){
     db.collection('users').doc(uid).update({role: role}).then(function(){
@@ -755,6 +860,12 @@
       push('hours', {});
     } else if(action==='go-manage-users'){
       push('manageUsers', {});
+    } else if(action==='go-all-requests'){
+      push('allRequests', {});
+    } else if(action==='edit-request'){
+      push('editRequest', {requestId: btn.dataset.id});
+    } else if(action==='delete-request'){
+      if(confirm('למחוק את הבקשה הזו לצמיתות?')) deleteRequest(btn.dataset.id);
     } else if(action==='resume-visit'){
       push('scan', {requestId: btn.dataset.id});
     } else if(action==='claim-request'){
@@ -807,6 +918,8 @@
       submitEditProfile(form);
     } else if(kind==='send-request'){
       submitSendRequest(form);
+    } else if(kind==='edit-request'){
+      submitEditRequest(form);
     } else if(kind==='new-manager'){
       var fd2 = new FormData(form);
       var mname = (fd2.get('name')||'').toString().trim();
@@ -821,7 +934,10 @@
   function screenNeedsRequestsLive(){
     var top = state.stack[state.stack.length-1];
     if(!top) return false;
-    return ['openRequests','volunteerList','manageUsers','profile','hours','scan','feedback'].indexOf(top.screen) > -1;
+    // 'editRequest' is deliberately excluded: it holds a form pre-filled from
+    // a request doc, and re-rendering on every live update (even to other
+    // requests) would wipe whatever the admin/manager is mid-typing.
+    return ['openRequests','volunteerList','manageUsers','allRequests','profile','hours','scan','feedback'].indexOf(top.screen) > -1;
   }
   function screenNeedsVolunteersLive(){
     var top = state.stack[state.stack.length-1];
