@@ -1,0 +1,148 @@
+:root{
+  --bg:#F6F1E7; --surface:#FFFFFF; --surface2:#FBF7F0; --border:rgba(43,38,32,0.13);
+  --text:#2B2620; --text2:#7A7167; --muted:#9C9284;
+  --primary:#2F6B5C; --primary-ink:#FFFFFF; --primary-tint:#E7F0EC;
+  --accent:#C9784A; --accent-tint:#F5E3D6;
+  --success:#3F8F63; --success-tint:#E3F3EA;
+  --danger:#B3492F; --danger-tint:#FBE9E3;
+  --shadow:0 10px 26px rgba(43,38,32,0.10);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#1C1B18; --surface:#252420; --surface2:#2C2B26; --border:rgba(255,255,255,0.11);
+    --text:#F3F0E9; --text2:#B8AFA1; --muted:#8C8477;
+    --primary:#63AE93; --primary-ink:#10201A; --primary-tint:rgba(99,174,147,0.16);
+    --accent:#E0985F; --accent-tint:rgba(224,152,95,0.16);
+    --success:#63BE8E; --success-tint:rgba(99,190,142,0.16);
+    --danger:#E28468; --danger-tint:rgba(226,132,104,0.16);
+    --shadow:0 10px 26px rgba(0,0,0,0.32);
+    color-scheme: dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{direction:rtl; height:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:'Assistant',system-ui,'Segoe UI',sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{font-family:'Frank Ruhl Libre',Georgia,serif; margin:0;}
+button,input,select,textarea{font-family:inherit; font-size:15px; color:var(--text);}
+button{cursor:pointer}
+a{color:var(--primary)}
+::placeholder{color:var(--muted)}
+
+.app-shell{max-width:460px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column;}
+.loading-screen{flex-grow:1; display:flex; align-items:center; justify-content:center; color:var(--text2);}
+
+.scr-header{padding:22px 18px 14px; background:var(--surface); border-bottom:1px solid var(--border);}
+.scr-header-row{display:flex; align-items:center; gap:10px;}
+.scr-title{flex-grow:1; font-size:20px; font-weight:600;}
+.scr-sub{display:block; font-size:12.5px; color:var(--text2); padding-right:46px; margin-top:4px;}
+.scr-actions{display:flex; gap:2px; flex-shrink:0;}
+.icon-btn{width:36px; height:36px; border:none; background:transparent; border-radius:10px; display:flex; align-items:center; justify-content:center; color:var(--text); flex-shrink:0; padding:0;}
+.icon-btn:active{background:var(--surface2);}
+.icon-spacer{width:36px; flex-shrink:0;}
+
+main#view{flex-grow:1; display:flex; flex-direction:column;}
+.view-body{flex-grow:1; padding:16px 16px 28px; display:flex; flex-direction:column; gap:14px;}
+
+.card{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:10px; box-shadow:var(--shadow);}
+.card-flat{background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:10px;}
+.card-title{font-family:'Frank Ruhl Libre',Georgia,serif; font-size:17px; font-weight:600;}
+.card-row{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.spacer{flex-grow:1}
+
+.chip{display:inline-flex; align-items:center; gap:5px; background:var(--surface2); color:var(--text); font-size:12px; font-weight:600; padding:5px 11px; border-radius:20px;}
+.chip-accent{background:var(--accent-tint); color:var(--accent);}
+.chip-primary{background:var(--primary-tint); color:var(--primary);}
+.chip-danger{background:var(--danger-tint); color:var(--danger);}
+
+.badge{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700; padding:5px 10px; border-radius:20px;}
+.badge-open{background:var(--accent-tint); color:var(--accent);}
+.badge-claimed{background:var(--primary-tint); color:var(--primary);}
+.badge-checked_in{background:var(--primary); color:var(--primary-ink);}
+.badge-checked_out{background:var(--surface2); color:var(--text2);}
+.badge-done{background:var(--success-tint); color:var(--success);}
+.role-badge{background:var(--surface2); color:var(--text2); font-size:11px; font-weight:700; padding:3px 9px; border-radius:20px;}
+.role-badge.role-admin{background:var(--danger-tint); color:var(--danger);}
+.role-badge.role-manager{background:var(--primary-tint); color:var(--primary);}
+
+.btn{border:none; border-radius:12px; padding:12px 16px; font-weight:700; font-size:14.5px; background:var(--surface2); color:var(--text);}
+.btn-primary{background:var(--primary); color:var(--primary-ink);}
+.btn-accent{background:var(--accent); color:#FFFFFF;}
+.btn-danger{background:var(--danger-tint); color:var(--danger);}
+.btn-outline{background:transparent; border:1.5px solid var(--border); color:var(--text);}
+.btn-outline.active{border-color:var(--primary); color:var(--primary); background:var(--primary-tint);}
+.btn-block{width:100%;}
+.btn-sm{padding:7px 12px; font-size:12.5px; border-radius:9px;}
+.btn[disabled]{opacity:.5; cursor:not-allowed;}
+.link-btn{background:none; border:none; color:var(--accent); font-weight:600; font-size:13px; padding:4px;}
+
+.field{display:flex; flex-direction:column; gap:6px;}
+.field label{font-size:12.5px; font-weight:700; color:var(--text2);}
+.field input[type="text"], .field input[type="email"], .field input[type="number"], .field input[type="password"], .field select, .field textarea{
+  border:1px solid var(--border); border-radius:11px; padding:11px 13px; background:var(--surface2); color:var(--text); width:100%;
+}
+.field textarea{resize:vertical; line-height:1.55; min-height:88px;}
+.checks{display:flex; flex-wrap:wrap; gap:8px;}
+.check-opt{display:flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:20px; padding:7px 12px; font-size:13px; background:var(--surface2);}
+.check-opt input{margin:0;}
+
+.divider{height:1px; background:var(--border); margin:2px 0;}
+
+.empty{display:flex; flex-direction:column; align-items:center; gap:8px; padding:34px 16px; text-align:center; color:var(--text2); font-size:14px;}
+.empty b{color:var(--text); font-size:15px;}
+
+.banner{display:flex; gap:10px; align-items:flex-start; background:var(--danger-tint); color:var(--danger); border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.5;}
+.banner-info{display:flex; gap:10px; align-items:center; background:var(--primary-tint); color:var(--primary); border-radius:12px; padding:12px 14px; font-size:12.5px; line-height:1.5;}
+.banner-active{background:var(--accent-tint); border-radius:14px; padding:14px 16px; display:flex; align-items:center; gap:10px;}
+
+.avatar{width:42px; height:42px; border-radius:50%; background:var(--accent-tint); color:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:700; font-family:'Frank Ruhl Libre',Georgia,serif; font-size:16px; flex-shrink:0;}
+.avatar-lg{width:84px; height:84px; font-size:32px; border:3px solid var(--surface); box-shadow:var(--shadow);}
+
+.vrow{display:flex; align-items:center; gap:12px; padding:13px 4px; border-bottom:1px solid var(--border);}
+.vrow:last-child{border-bottom:none;}
+.vrow-main{display:flex; align-items:center; gap:12px; flex-grow:1; background:none; border:none; text-align:right; padding:0; min-width:0;}
+.vrow-main span.name{font-size:15.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.dot{width:10px; height:10px; border-radius:50%; flex-shrink:0;}
+.dot-on{background:var(--success);}
+.dot-off{border:1.5px solid var(--muted); background:transparent;}
+
+.stat-row{display:flex; align-items:center; gap:10px; padding:9px 0;}
+.stat-name{width:84px; font-size:13.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.bar-track{flex-grow:1; height:9px; border-radius:6px; background:var(--surface2); overflow:hidden;}
+.bar-fill{height:100%; border-radius:6px; background:var(--primary);}
+.stat-val{width:38px; text-align:left; font-size:12.5px; color:var(--text2); font-weight:700; font-variant-numeric:tabular-nums;}
+
+.total-card{background:var(--primary); border-radius:16px; padding:16px 18px; display:flex; align-items:center; justify-content:space-between;}
+.total-card span:first-child{color:var(--primary-tint); font-size:13.5px; font-weight:600;}
+.total-card span:last-child{color:#fff; font-family:'Frank Ruhl Libre',Georgia,serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums;}
+
+.toast{position:fixed; right:50%; transform:translateX(50%) translateY(20px); bottom:18px; background:var(--text); color:var(--bg); font-size:13.5px; font-weight:600; padding:11px 18px; border-radius:12px; opacity:0; pointer-events:none; transition:opacity .2s, transform .2s; max-width:88%; text-align:center; z-index:50;}
+.toast.show{opacity:1; transform:translateX(50%) translateY(0);}
+
+.hint{font-size:12px; color:var(--muted); line-height:1.5;}
+.small{font-size:12px; color:var(--text2);}
+
+/* ---- login / register ---- */
+.login-wrap{flex-grow:1; display:flex; flex-direction:column; align-items:center; background:linear-gradient(180deg, color-mix(in srgb, var(--primary) 14%, var(--bg)) 0%, var(--bg) 62%); padding:40px 24px 28px; text-align:center;}
+.login-brand{font-size:38px; font-weight:700; color:var(--primary); margin:12px 0 4px;}
+.login-tag{font-size:14.5px; color:var(--text2); margin:0 0 24px;}
+.login-mode-toggle{width:100%; display:flex; gap:6px; background:var(--surface2); padding:4px; border-radius:12px; border:1px solid var(--border); margin-bottom:16px;}
+.rtoggle{flex:1; border:none; background:transparent; border-radius:9px; padding:9px; font-weight:700; font-size:13px; color:var(--text2);}
+.rtoggle.active{background:var(--primary); color:var(--primary-ink);}
+.login-card{width:100%; background:var(--surface); border-radius:20px; padding:22px; display:flex; flex-direction:column; gap:14px; box-shadow:var(--shadow); border:1px solid var(--border); text-align:right;}
+.login-foot{margin-top:auto; padding-top:20px; font-size:12px; color:var(--muted);}
+.btn-google{display:flex; align-items:center; justify-content:center; gap:10px; background:var(--surface); border:1.5px solid var(--border); color:var(--text); font-weight:700;}
+.or-sep{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12px;}
+.or-sep::before, .or-sep::after{content:""; flex-grow:1; height:1px; background:var(--border);}
+
+/* ---- scan screen ---- */
+.scan-stage{display:flex; flex-direction:column; align-items:center; gap:16px; padding:6px 2px;}
+.scan-card{width:100%; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:20px; display:flex; flex-direction:column; align-items:center; gap:12px; box-shadow:var(--shadow);}
+.scan-card.locked{opacity:.4;}
+.scan-connector{display:flex; flex-direction:column; align-items:center; gap:4px;}
+.scan-connector span{width:2px; height:16px; background:var(--border);}
+.scan-connector i{width:8px; height:8px; border-radius:50%; background:var(--border); display:block;}
