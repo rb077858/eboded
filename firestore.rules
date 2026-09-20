@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ----
+    function isSignedIn() { return request.auth != null; }
+    function myData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function myRole() { return isSignedIn() ? myData().role : null; }
+    function isAdmin() { return myRole() == 'admin'; }
+    function isManager() { return myRole() == 'manager' || isAdmin(); }
+    function amActiveVolunteer() { return isSignedIn() && myData().disabled != true; }
+
+    // The one email that is always allowed to bootstrap as admin the very
+    // first time it signs in. Keep this in sync with ADMIN_EMAIL in
+    // js/firebase-config.js. After the first sign-in, admin rights are
+    // reassignable from inside the app (Admin panel), and this literal is
+    // only used for that first bootstrap document.
+    function bootstrapRole() {
+      return request.auth.token.email == 'rb077858@gmail.com' ? 'admin' : 'volunteer';
+    }
+
+    // ---- users ----
+    match /users/{userId} {
+      allow read: if isSignedIn();
+
+      // A signed-in person creating their OWN profile document
+      // (self-registration / first Google sign-in / bootstrap admin).
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.role == bootstrapRole()
+        && request.resource.data.disabled == false;
+
+      // The admin creating someone else's profile document
+      // (used when the admin creates a new department-manager account).
+      allow create: if isAdmin()
+        && request.resource.data.uid == userId
+        && request.resource.data.role in ['volunteer', 'manager']
+        && request.resource.data.disabled == false;
+
+      allow update: if isAdmin()
+        || (isManager()
+            && resource.data.role == 'volunteer'
+            && request.resource.data.role == 'volunteer')
+        || (request.auth.uid == userId
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.disabled == resource.data.disabled);
+
+      allow delete: if isAdmin();
+    }
+
+    // ---- requests ----
+    match /requests/{reqId} {
+      allow read: if isSignedIn();
+      allow create: if isManager();
+      allow delete: if isManager();
+
+      allow update: if isManager()
+        || (
+          // a volunteer claiming an open request for themselves
+          amActiveVolunteer() &&
+          resource.data.status == 'open' &&
+          request.resource.data.status == 'claimed' &&
+          request.resource.data.claimedByUid == request.auth.uid
+        )
+        || (
+          // the volunteer who claimed it moving it through check-in /
+          // check-out / done, one step at a time
+          amActiveVolunteer() &&
+          resource.data.claimedByUid == request.auth.uid && (
+            (resource.data.status == 'claimed' && request.resource.data.status == 'checked_in') ||
+            (resource.data.status == 'checked_in' && request.resource.data.status == 'checked_out') ||
+            (resource.data.status == 'checked_out' && request.resource.data.status == 'done')
+          )
+        );
+    }
+  }
+}
