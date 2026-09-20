@@ -14,12 +14,12 @@
 // ---------------------------------------------------------------------------
 
 var firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyAwdnTmCbOyY7v1PdTlngC0k-MaGW0URMI",
+  authDomain: "eboded-e382a.firebaseapp.com",
+  projectId: "eboded-e382a",
+  storageBucket: "eboded-e382a.firebasestorage.app",
+  messagingSenderId: "848482864269",
+  appId: "1:848482864269:web:a444ae89af4905e707a6c4"
 };
 
 // The one person who is always allowed to be admin (bootstrap account).
