@@ -29,6 +29,7 @@
     profile: null,         // users/{uid} doc data
     profileLoaded: false,
     loginMode: 'login',    // 'login' | 'register'
+    previewRole: null,     // null | 'volunteer' | 'manager' — admin "view as" preview
     stack: [],
     volunteers: [],
     volunteersLoaded: false,
@@ -99,6 +100,8 @@
   function plusSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'; }
   function statsSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M4 20V10M12 20V4M20 20V14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
   function personSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="currentColor" stroke-width="2"/><path d="M5 20c1.2-4 4-6 7-6s5.8 2 7 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'; }
+  function logoutSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 17l5-5-5-5M20 12H9M12 4H6a2 2 0 00-2 2v12a2 2 0 002 2h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
+  function eyeSvg(){ return '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" style="vertical-align:-3px; margin-left:4px;"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>'; }
   function gearSvg(){ return '<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 00.34 1.87l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.7 1.7 0 00-1.87-.34 1.7 1.7 0 00-1.04 1.56V21a2 2 0 11-4 0v-.09a1.7 1.7 0 00-1.04-1.56 1.7 1.7 0 00-1.87.34l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.7 1.7 0 004.6 15a1.7 1.7 0 00-1.56-1.04H3a2 2 0 010-4h.09A1.7 1.7 0 004.6 9a1.7 1.7 0 00-.34-1.87l-.06-.06a2 2 0 112.83-2.83l.06.06A1.7 1.7 0 009 4.6a1.7 1.7 0 001.04-1.56V3a2 2 0 014 0v.09A1.7 1.7 0 0015 4.6a1.7 1.7 0 001.87-.34l.06-.06a2 2 0 112.83 2.83l-.06.06A1.7 1.7 0 0019.4 9a1.7 1.7 0 001.56 1.04H21a2 2 0 010 4h-.09A1.7 1.7 0 0019.4 15z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'; }
   function googleSvg(){ return '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.6 6.1 29.6 4 24 4 16 4 9.1 8.4 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.5 0 10.4-2.1 14.1-5.5l-6.5-5.5C29.5 34.7 26.9 35.7 24 35.7c-5.2 0-9.6-3.3-11.2-7.9l-6.6 5.1C9 39.6 15.9 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.3-4.1 5.6l6.5 5.5C41.6 36.4 44 30.7 44 24c0-1.3-.1-2.7-.4-3.5z"/></svg>'; }
   function qrSvg(muted){
@@ -110,10 +113,28 @@
   }
 
   // ---------------- navigation ----------------
+  // isAdmin()/isManager() reflect the REAL signed-in role (what the person
+  // is actually allowed to write in Firestore). effectiveRole() reflects
+  // what's shown on screen, which during an admin "preview" is the role
+  // being previewed rather than the admin's real role.
   function myRole(){ return state.profile ? state.profile.role : null; }
   function isAdmin(){ return myRole()==='admin'; }
   function isManager(){ return myRole()==='manager' || isAdmin(); }
-  function homeScreen(){ return myRole()==='volunteer' ? 'openRequests' : 'volunteerList'; }
+  function effectiveRole(){ return state.previewRole || myRole(); }
+  function homeScreen(){ return effectiveRole()==='volunteer' ? 'openRequests' : 'volunteerList'; }
+  function enterPreview(role){
+    state.previewRole = role;
+    state.stack = [{screen: role==='volunteer' ? 'openRequests' : 'volunteerList', params:{}}];
+    render();
+  }
+  function exitPreview(){
+    state.previewRole = null;
+    goHome();
+  }
+  function guardPreview(){
+    if(state.previewRole){ toast('זהו מצב תצוגה מקדימה בלבד — הפעולה לא באמת מתבצעת'); return true; }
+    return false;
+  }
   function goHome(){ state.stack = [{screen: homeScreen(), params:{}}]; render(); }
   function push(screen, params){ state.stack.push({screen:screen, params: params||{}}); render(); }
   function replaceTop(screen, params){ state.stack[state.stack.length-1] = {screen:screen, params: params||{}}; render(); }
@@ -138,6 +159,15 @@
   }
   function statusBadge(status){ return '<span class="badge badge-'+status+'">'+statusLabel(status)+'</span>'; }
   function roleBadge(role){ return '<span class="role-badge role-'+role+'">'+esc(ROLE_LABELS[role]||role)+'</span>'; }
+  function previewBannerHtml(){
+    if(!state.previewRole) return '';
+    var label = ROLE_LABELS[state.previewRole] || state.previewRole;
+    return '<div class="banner" style="background:var(--accent-tint); color:var(--accent); margin:12px 16px 0; align-items:center;">' +
+      eyeSvg() +
+      '<span style="flex-grow:1;">מצב תצוגה מקדימה — כך נראה המסך עבור <b>'+esc(label)+'</b>. פעולות שמירה מושבתות.</span>' +
+      '<button type="button" class="btn btn-sm btn-outline" data-action="exit-preview">יציאה</button>' +
+    '</div>';
+  }
 
   // ---------------- render dispatch ----------------
   function render(){
@@ -172,7 +202,7 @@
       case 'hours': body = screenHours(); break;
       default: body = screenOpenRequests();
     }
-    view.innerHTML = body;
+    view.innerHTML = previewBannerHtml() + body;
   }
 
   // ================= SCREEN — login / register =================
@@ -204,13 +234,14 @@
 
   // ================= SCREEN — open requests (volunteer home) =================
   function myActiveVisit(){
-    if(myRole()!=='volunteer') return null;
+    if(effectiveRole()!=='volunteer') return null;
     return state.requests.find(function(r){
       return r.claimedByUid===state.authUser.uid && (r.status==='claimed' || r.status==='checked_in');
     }) || null;
   }
   function screenOpenRequests(){
-    var actions = '<button class="icon-btn" data-action="go-my-profile" aria-label="הפרופיל שלי">'+personSvg()+'</button>';
+    var actions = '<button class="icon-btn" data-action="go-my-profile" aria-label="הפרופיל שלי">'+personSvg()+'</button>' +
+                  (!state.previewRole ? '<button class="icon-btn" data-action="do-logout" aria-label="התנתקות">'+logoutSvg()+'</button>' : '');
     var html = header('בקשות פתוחות', {actions:actions, sub:'חולים שממתינים לביקור — בחרו את הבקשה שמתאימה לכם'});
     var body = '';
     var active = myActiveVisit();
@@ -253,10 +284,13 @@
   function screenVolunteerList(){
     var actions = '<button class="icon-btn" data-action="new-request" aria-label="בקשה חדשה">'+plusSvg()+'</button>' +
                   '<button class="icon-btn" data-action="go-hours" aria-label="סיכום שעות">'+statsSvg()+'</button>' +
-                  (isManager() ? '<button class="icon-btn" data-action="go-manage-users" aria-label="ניהול משתמשים">'+gearSvg()+'</button>' : '');
+                  (!state.previewRole && isManager() ? '<button class="icon-btn" data-action="go-manage-users" aria-label="ניהול משתמשים">'+gearSvg()+'</button>' : '') +
+                  (!state.previewRole ? '<button class="icon-btn" data-action="do-logout" aria-label="התנתקות">'+logoutSvg()+'</button>' : '');
     var html = header('רשימת המתנדבים', {actions:actions});
     var body = '<div class="banner-info">בלחיצה על שם מתנדב/ת ייפתח הפרופיל המלא &mdash; חשוף לצוות בלבד</div>';
-    var activeList = state.volunteers.filter(function(v){ return !v.disabled; });
+    // Only real volunteers show up here — managers and the admin never appear
+    // in this list, since it exists to send visit requests to volunteers.
+    var activeList = state.volunteers.filter(function(v){ return !v.disabled && v.role==='volunteer'; });
     if(!state.volunteersLoaded){
       body += '<div class="empty"><b>טוען מתנדבים…</b></div>';
     } else if(activeList.length===0){
@@ -281,6 +315,14 @@
     var html = header('ניהול משתמשים', {back:true, sub: isAdmin() ? 'אדמין ראשי — שליטה מלאה' : 'מנהל/ת מחלקה — ניהול מתנדבים'});
     var body = '';
     if(isAdmin()){
+      body += '<div class="card-flat">' +
+        '<span class="card-title" style="font-size:15px;">תצוגה מקדימה</span>' +
+        '<p class="hint">צפו במסך בדיוק כפי שמתנדב/ת או מנהל/ת מחלקה רואים אותו, בלי לבצע שום פעולה אמיתית.</p>' +
+        '<div class="card-row" style="gap:8px;">' +
+          '<button type="button" class="btn btn-outline" style="flex:1;" data-action="preview-as" data-role="volunteer">צפייה כמתנדב/ת</button>' +
+          '<button type="button" class="btn btn-outline" style="flex:1;" data-action="preview-as" data-role="manager">צפייה כמנהל/ת מחלקה</button>' +
+        '</div>' +
+      '</div>';
       body += '<div class="card-flat">' +
         '<span class="card-title" style="font-size:15px;">יצירת חשבון מנהל/ת מחלקה</span>' +
         '<p class="hint">רק האדמין הראשי יכול ליצור חשבונות מנהל/ת מחלקה. המנהל/ת החדש/ה יקבל/תקבל אימייל וסיסמה שתגדירו כאן.</p>' +
@@ -532,6 +574,7 @@
 
   // ---------------- actions: db writes ----------------
   function claimRequest(id){
+    if(guardPreview()) return;
     if(state.busy['claim-'+id]) return;
     var myId = state.authUser.uid;
     setBusy('claim-'+id, true); render();
@@ -560,6 +603,7 @@
   }
 
   function checkIn(id){
+    if(guardPreview()) return;
     if(state.busy['checkin-'+id]) return;
     setBusy('checkin-'+id, true); render();
     db.collection('requests').doc(id).update({status:'checked_in', checkInAt:new Date().toISOString()})
@@ -567,6 +611,7 @@
       .catch(function(){ toast('משהו השתבש, נסו שוב'); setBusy('checkin-'+id, false); render(); });
   }
   function checkOut(id){
+    if(guardPreview()) return;
     if(state.busy['checkout-'+id]) return;
     setBusy('checkout-'+id, true); render();
     db.collection('requests').doc(id).update({status:'checked_out', checkOutAt:new Date().toISOString()})
@@ -578,6 +623,7 @@
       .catch(function(){ toast('משהו השתבש, נסו שוב'); setBusy('checkout-'+id, false); render(); });
   }
   function submitFeedback(id){
+    if(guardPreview()) return;
     if(state.busy['feedback-'+id]) return;
     var ta = document.getElementById('fb-ta');
     var text = ta ? ta.value : (state.feedbackDrafts[id]||'');
@@ -594,6 +640,7 @@
       .catch(function(){ toast('משהו השתבש, נסו שוב'); setBusy('feedback-'+id, false); render(); });
   }
   function submitEditProfile(form){
+    if(guardPreview()) return;
     var uid = state.authUser.uid;
     var fd = new FormData(form);
     var name = (fd.get('name')||'').toString().trim();
@@ -614,6 +661,7 @@
     });
   }
   function submitSendRequest(form){
+    if(guardPreview()) return;
     var fd = new FormData(form);
     var volunteerId = (fd.get('volunteerId')||'').toString() || null;
     var volunteerName = (fd.get('volunteerName')||'').toString() || null;
@@ -725,6 +773,10 @@
       if(confirm('להשבית/למחוק את החשבון?')) disableUser(btn.dataset.id);
     } else if(action==='enable-user'){
       enableUser(btn.dataset.id);
+    } else if(action==='preview-as'){
+      enterPreview(btn.dataset.role);
+    } else if(action==='exit-preview'){
+      exitPreview();
     }
   });
 
