@@ -5,7 +5,11 @@
 
   var DEPARTMENTS = ["אורתופדית","כירורגית א׳","כירורגית ב׳","נשים ויולדות","פנימית א׳","פנימית ב׳","פנימית ג׳","פנימית ד׳","ילדים","גריאטריה","אחר"];
   var LANGUAGES = ["עברית","ערבית","אנגלית","רוסית","אמהרית","ספרדית","צרפתית"];
-  var ROLE_LABELS = {admin:'אדמין ראשי', manager:'מנהל/ת מחלקה', volunteer:'מתנדב/ת'};
+  var ROLE_LABELS = {owner:'בעלים', admin:'אדמין ראשי', manager:'מנהל/ת מחלקה', volunteer:'מתנדב/ת'};
+  // owner > admin > manager > volunteer. Everyone manages only people
+  // strictly below their own rank (enforced for real in firestore.rules).
+  var ROLE_RANK = {owner:3, admin:2, manager:1, volunteer:0};
+  var ACTIVE_STATUSES = ['claimed','checked_in','checked_out'];
 
   // ---------------- firebase init ----------------
   firebase.initializeApp(firebaseConfig);
@@ -37,11 +41,15 @@
     requestsLoaded: false,
     feedbackDrafts: {},
     feedbackChoice: {},
-    newManagerBusy: false,
+    newAccountBusy: false,
+    liveStaff: null,       // were the live listeners attached with staff access
     busy: {}
   };
 
-  var unsubProfile = null, unsubRequests = null, unsubVolunteers = null;
+  var unsubProfile = null, unsubRequests = [], unsubVolunteers = null;
+  var pendingRegisterName = null;
+  var lastRenderedTop = null;   // stack entry drawn by the last render()
+  var keepFields = true;        // false = next render starts with empty fields
 
   function esc(s){
     return String(s==null?'':s).replace(/[&<>"']/g, function(c){
@@ -115,16 +123,32 @@
   }
 
   // ---------------- navigation ----------------
-  // isAdmin()/isManager() reflect the REAL signed-in role (what the person
-  // is actually allowed to write in Firestore). effectiveRole() reflects
-  // what's shown on screen, which during an admin "preview" is the role
-  // being previewed rather than the admin's real role.
+  // myRole()/myRank() reflect the REAL signed-in role (what the person is
+  // actually allowed to write in Firestore). effectiveRole()/effectiveRank()
+  // reflect what's shown on screen, which during a "preview" is the role
+  // being previewed. Screens are drawn from the effective role; every write
+  // goes through guardPreview(), so a preview never changes real data.
   function myRole(){ return state.profile ? state.profile.role : null; }
-  function isAdmin(){ return myRole()==='admin'; }
-  function isManager(){ return myRole()==='manager' || isAdmin(); }
+  function rankOf(role){ return ROLE_RANK[role] != null ? ROLE_RANK[role] : 0; }
+  function myRank(){ return rankOf(myRole()); }
+  function isStaff(){ return myRank() >= 1; }
   function effectiveRole(){ return state.previewRole || myRole(); }
+  function effectiveRank(){ return rankOf(effectiveRole()); }
+  function previewRolesFor(role){
+    return ['volunteer','manager','admin'].filter(function(r){ return rankOf(r) < rankOf(role); });
+  }
+  function isDeleted(u){ return !!(u && u.deleted); }
+  function isActiveStatus(status){ return ACTIVE_STATUSES.indexOf(status) > -1; }
+  function activeVisitOf(uid){
+    return state.requests.find(function(r){ return r.claimedByUid===uid && isActiveStatus(r.status); }) || null;
+  }
+  function findUser(uid){
+    if(state.profile && state.profile.uid===uid) return state.profile;
+    return state.volunteers.find(function(x){ return x.uid===uid; }) || null;
+  }
   function homeScreen(){ return effectiveRole()==='volunteer' ? 'openRequests' : 'volunteerList'; }
   function enterPreview(role){
+    if(previewRolesFor(myRole()).indexOf(role) < 0) return;
     state.previewRole = role;
     state.stack = [{screen: role==='volunteer' ? 'openRequests' : 'volunteerList', params:{}}];
     render();
@@ -206,7 +230,47 @@
       case 'hours': body = screenHours(); break;
       default: body = screenOpenRequests();
     }
+    // Live data re-renders the current screen while someone may be typing in
+    // it; keep whatever they've entered as long as it's the same screen.
+    var saved = (lastRenderedTop===top && keepFields) ? captureFields(view) : null;
     view.innerHTML = previewBannerHtml() + body;
+    if(saved) restoreFields(view, saved);
+    lastRenderedTop = top;
+    keepFields = true;
+  }
+  function fieldKey(el){
+    if(el.type==='checkbox' || el.type==='radio'){
+      var form = el.closest('[data-form]');
+      return (form ? form.dataset.form : '')+'|'+el.name+'|'+el.value;
+    }
+    return el.id || null;
+  }
+  function captureFields(view){
+    var saved = {values:{}, focus:null};
+    view.querySelectorAll('input:not([type=hidden]), select, textarea').forEach(function(el){
+      var k = fieldKey(el);
+      if(k) saved.values[k] = (el.type==='checkbox' || el.type==='radio') ? el.checked : el.value;
+    });
+    var a = document.activeElement;
+    if(a && view.contains(a) && a.id){
+      saved.focus = {id:a.id, start:a.selectionStart, end:a.selectionEnd};
+    }
+    return saved;
+  }
+  function restoreFields(view, saved){
+    view.querySelectorAll('input:not([type=hidden]), select, textarea').forEach(function(el){
+      var k = fieldKey(el);
+      if(!k || !(k in saved.values)) return;
+      if(el.type==='checkbox' || el.type==='radio') el.checked = saved.values[k];
+      else el.value = saved.values[k];
+    });
+    if(saved.focus){
+      var el = document.getElementById(saved.focus.id);
+      if(el){
+        el.focus();
+        try{ if(saved.focus.start!=null) el.setSelectionRange(saved.focus.start, saved.focus.end); }catch(e){}
+      }
+    }
   }
 
   // ================= SCREEN — login / register =================
@@ -230,18 +294,18 @@
         '</form>' +
         '<div class="or-sep" style="width:100%; margin:2px 0;">או</div>' +
         '<button type="button" class="btn btn-google btn-block" data-action="google-login">'+googleSvg()+'<span>המשך עם Google</span></button>' +
-        (isReg ? '<p class="hint" style="margin-top:8px;">הרשמה עצמית פתוחה למתנדבים. חשבונות מנהלי מחלקה נוצרים על ידי האדמין הראשי בלבד.</p>' : '') +
+        (isReg ? '<p class="hint" style="margin-top:8px;">הרשמה עצמית פתוחה למתנדבים. חשבונות צוות (מנהלי מחלקה ואדמינים) נוצרים מתוך מסך ניהול המשתמשים בלבד.</p>' : '') +
         '<div class="login-foot">בית חולים איכילוב &middot; מחלקת התנדבות</div>' +
       '</div>'
     );
   }
 
   // ================= SCREEN — open requests (volunteer home) =================
+  // A volunteer has at most one active visit at a time: claimed, checked in,
+  // or checked out but still waiting for feedback.
   function myActiveVisit(){
     if(effectiveRole()!=='volunteer') return null;
-    return state.requests.find(function(r){
-      return r.claimedByUid===state.authUser.uid && (r.status==='claimed' || r.status==='checked_in');
-    }) || null;
+    return activeVisitOf(state.authUser.uid);
   }
   function screenOpenRequests(){
     var actions = '<button class="icon-btn" data-action="go-my-profile" aria-label="הפרופיל שלי">'+personSvg()+'</button>' +
@@ -259,9 +323,12 @@
       if(open.length===0){
         body += '<div class="empty">🌊<b>אין כרגע בקשות פתוחות</b><span>כשתיפתח בקשה חדשה מהמחלקות היא תופיע כאן.</span></div>';
       } else {
+        if(active){
+          body += '<p class="hint" style="text-align:center;">אפשר לקחת בקשה חדשה רק אחרי שהביקור הנוכחי מסתיים (כולל משוב).</p>';
+        }
         body += open.map(function(r){
           var busy = !!state.busy['claim-'+r.id];
-          return requestCard(r, '<button class="btn btn-primary btn-block" data-action="claim-request" data-id="'+r.id+'" '+(busy?'disabled':'')+'>'+(busy?'משבצים…':'אני מתנדב/ת בבקשה זו')+'</button>');
+          return requestCard(r, '<button class="btn btn-primary btn-block" data-action="claim-request" data-id="'+r.id+'" '+(busy||active?'disabled':'')+'>'+(busy?'משבצים…':'אני מתנדב/ת בבקשה זו')+'</button>');
         }).join('');
       }
     }
@@ -289,20 +356,20 @@
     var actions = '<button class="icon-btn" data-action="new-request" aria-label="בקשה חדשה">'+plusSvg()+'</button>' +
                   '<button class="icon-btn" data-action="go-all-requests" aria-label="כל הבקשות">'+listSvg()+'</button>' +
                   '<button class="icon-btn" data-action="go-hours" aria-label="סיכום שעות">'+statsSvg()+'</button>' +
-                  (!state.previewRole && isManager() ? '<button class="icon-btn" data-action="go-manage-users" aria-label="ניהול משתמשים">'+gearSvg()+'</button>' : '') +
+                  '<button class="icon-btn" data-action="go-manage-users" aria-label="ניהול משתמשים">'+gearSvg()+'</button>' +
                   (!state.previewRole ? '<button class="icon-btn" data-action="do-logout" aria-label="התנתקות">'+logoutSvg()+'</button>' : '');
     var html = header('רשימת המתנדבים', {actions:actions});
     var body = '<div class="banner-info">בלחיצה על שם מתנדב/ת ייפתח הפרופיל המלא &mdash; חשוף לצוות בלבד</div>';
     // Only real volunteers show up here — managers and the admin never appear
     // in this list, since it exists to send visit requests to volunteers.
-    var activeList = state.volunteers.filter(function(v){ return !v.disabled && v.role==='volunteer'; });
+    var activeList = state.volunteers.filter(function(v){ return !v.disabled && !isDeleted(v) && v.role==='volunteer'; });
     if(!state.volunteersLoaded){
       body += '<div class="empty"><b>טוען מתנדבים…</b></div>';
     } else if(activeList.length===0){
       body += '<div class="empty">🧑‍🤝‍🧑<b>עדיין אין מתנדבים רשומים</b><span>ברגע שמתנדב/ת יירשם/תירשם, השם יופיע כאן.</span></div>';
     } else {
       var rows = activeList.map(function(v){
-        var active = state.requests.some(function(r){ return r.claimedByUid===v.uid && (r.status==='claimed'||r.status==='checked_in'); });
+        var active = !!activeVisitOf(v.uid);
         return '<button type="button" class="vrow-main" data-action="open-profile" data-id="'+v.uid+'" style="width:100%;">' +
           '<div class="avatar">'+esc((v.name||'?').charAt(0))+'</div>' +
           '<span class="name" style="flex-grow:1;">'+esc(v.name||'')+'</span>' +
@@ -315,36 +382,50 @@
     return wrapScreen(html, body);
   }
 
-  // ================= SCREEN — manage users (admin / manager) =================
+  // ================= SCREEN — manage users (owner / admin / manager) =================
+  var MANAGE_SUBS = {
+    owner: 'בעלים — שליטה מלאה בכל המשתמשים',
+    admin: 'אדמין ראשי — ניהול מנהלי מחלקה ומתנדבים',
+    manager: 'מנהל/ת מחלקה — ניהול מתנדבים'
+  };
   function screenManageUsers(){
-    var html = header('ניהול משתמשים', {back:true, sub: isAdmin() ? 'אדמין ראשי — שליטה מלאה' : 'מנהל/ת מחלקה — ניהול מתנדבים'});
+    var role = effectiveRole();
+    var html = header('ניהול משתמשים', {back:true, sub: MANAGE_SUBS[role] || ''});
     var body = '';
-    if(isAdmin()){
+    var previewRoles = previewRolesFor(myRole());
+    if(!state.previewRole && previewRoles.length){
       body += '<div class="card-flat">' +
         '<span class="card-title" style="font-size:15px;">תצוגה מקדימה</span>' +
-        '<p class="hint">צפו במסך בדיוק כפי שמתנדב/ת או מנהל/ת מחלקה רואים אותו, בלי לבצע שום פעולה אמיתית.</p>' +
+        '<p class="hint">צפו במסך בדיוק כפי שהוא נראה לתפקיד אחר, בלי לבצע שום פעולה אמיתית. צפייה בתור:</p>' +
         '<div class="card-row" style="gap:8px;">' +
-          '<button type="button" class="btn btn-outline" style="flex:1;" data-action="preview-as" data-role="volunteer">צפייה כמתנדב/ת</button>' +
-          '<button type="button" class="btn btn-outline" style="flex:1;" data-action="preview-as" data-role="manager">צפייה כמנהל/ת מחלקה</button>' +
+          previewRoles.map(function(r){
+            return '<button type="button" class="btn btn-outline" style="flex:1;" data-action="preview-as" data-role="'+r+'">'+eyeSvg()+esc(ROLE_LABELS[r])+'</button>';
+          }).join('') +
         '</div>' +
       '</div>';
+    }
+    // Owner and admins can add accounts, for any role below their own.
+    var creatable = effectiveRank() >= 2 ? ['admin','manager','volunteer'].filter(function(r){ return rankOf(r) < effectiveRank(); }) : [];
+    if(creatable.length){
       body += '<div class="card-flat">' +
-        '<span class="card-title" style="font-size:15px;">יצירת חשבון מנהל/ת מחלקה</span>' +
-        '<p class="hint">רק האדמין הראשי יכול ליצור חשבונות מנהל/ת מחלקה. המנהל/ת החדש/ה יקבל/תקבל אימייל וסיסמה שתגדירו כאן.</p>' +
-        '<form data-form="new-manager">' +
-          '<div class="field"><label for="nm-name">שם מלא</label><input id="nm-name" name="name" type="text" required></div>' +
-          '<div class="field" style="margin-top:10px;"><label for="nm-email">אימייל</label><input id="nm-email" name="email" type="email" required></div>' +
-          '<div class="field" style="margin-top:10px;"><label for="nm-pass">סיסמה זמנית</label><input id="nm-pass" name="pass" type="password" placeholder="לפחות 6 תווים" required></div>' +
-          '<button type="submit" class="btn btn-accent btn-block" style="margin-top:12px;" '+(state.newManagerBusy?'disabled':'')+'>'+(state.newManagerBusy?'יוצרים חשבון…':'יצירת מנהל/ת מחלקה')+'</button>' +
+        '<span class="card-title" style="font-size:15px;">הוספת משתמש/ת חדש/ה</span>' +
+        '<p class="hint">החשבון החדש יקבל את האימייל והסיסמה הזמנית שתגדירו כאן.</p>' +
+        '<form data-form="new-account">' +
+          '<div class="field"><label for="na-role">תפקיד</label><select id="na-role" name="role" required>' +
+            creatable.map(function(r){ return '<option value="'+r+'" '+(r==='manager'?'selected':'')+'>'+esc(ROLE_LABELS[r])+'</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="field" style="margin-top:10px;"><label for="na-name">שם מלא</label><input id="na-name" name="name" type="text" maxlength="80" required></div>' +
+          '<div class="field" style="margin-top:10px;"><label for="na-email">אימייל</label><input id="na-email" name="email" type="email" required></div>' +
+          '<div class="field" style="margin-top:10px;"><label for="na-pass">סיסמה זמנית</label><input id="na-pass" name="pass" type="password" placeholder="לפחות 6 תווים" required></div>' +
+          '<button type="submit" class="btn btn-accent btn-block" style="margin-top:12px;" '+(state.newAccountBusy?'disabled':'')+'>'+(state.newAccountBusy?'יוצרים חשבון…':'יצירת החשבון')+'</button>' +
         '</form>' +
       '</div>';
     }
     if(!state.volunteersLoaded){
       body += '<div class="empty"><b>טוען משתמשים…</b></div>';
     } else {
-      var users = state.volunteers.slice().sort(function(a,b){
-        var order = {admin:0, manager:1, volunteer:2};
-        return (order[a.role]||9)-(order[b.role]||9) || (a.name||'').localeCompare(b.name||'', 'he');
+      var users = state.volunteers.filter(function(v){ return !isDeleted(v); }).sort(function(a,b){
+        return rankOf(b.role)-rankOf(a.role) || (a.name||'').localeCompare(b.name||'', 'he');
       });
       body += '<div class="card-flat" style="padding:6px 14px;">' + users.map(function(v){
         return manageUserRow(v);
@@ -355,22 +436,21 @@
   function manageUserRow(v){
     var isSelf = state.authUser && v.uid===state.authUser.uid;
     var controls = '';
-    var canManageThis = isAdmin() ? true : (isManager() && v.role==='volunteer');
-    if(canManageThis && !isSelf){
+    var canManageThis = !isSelf && effectiveRank() > rankOf(v.role);
+    if(canManageThis){
       if(v.disabled){
         controls += '<button type="button" class="btn btn-sm btn-outline" data-action="enable-user" data-id="'+v.uid+'">שחזור חשבון</button>';
+        controls += '<button type="button" class="btn btn-sm btn-danger" data-action="delete-user" data-id="'+v.uid+'" data-name="'+esc(v.name||'')+'">מחיקה סופית</button>';
       } else {
-        controls += '<button type="button" class="btn btn-sm btn-danger" data-action="disable-user" data-id="'+v.uid+'">'+(v.role==='volunteer'?'מחיקת מתנדב/ת':'השבתה')+'</button>';
-      }
-    }
-    if(isAdmin() && !isSelf){
-      if(v.role==='volunteer'){
-        controls += '<button type="button" class="btn btn-sm btn-outline" data-action="set-role" data-id="'+v.uid+'" data-role="manager">הפוך/הפכי למנהל/ת</button>';
-      } else if(v.role==='manager'){
-        controls += '<button type="button" class="btn btn-sm btn-outline" data-action="set-role" data-id="'+v.uid+'" data-role="volunteer">הורדה למתנדב/ת</button>';
-        controls += '<button type="button" class="btn btn-sm btn-outline" data-action="set-role" data-id="'+v.uid+'" data-role="admin">מינוי לאדמין ראשי</button>';
-      } else if(v.role==='admin'){
-        controls += '<button type="button" class="btn btn-sm btn-outline" data-action="set-role" data-id="'+v.uid+'" data-role="manager">הורדה למנהל/ת מחלקה</button>';
+        controls += '<button type="button" class="btn btn-sm btn-danger" data-action="disable-user" data-id="'+v.uid+'">השבתה</button>';
+        ['admin','manager','volunteer'].forEach(function(r){
+          if(r!==v.role && rankOf(r) < effectiveRank()){
+            controls += '<button type="button" class="btn btn-sm btn-outline" data-action="set-role" data-id="'+v.uid+'" data-role="'+r+'">שינוי ל'+esc(ROLE_LABELS[r])+'</button>';
+          }
+        });
+        if(effectiveRole()==='owner' && v.role==='admin'){
+          controls += '<button type="button" class="btn btn-sm btn-accent" data-action="transfer-owner" data-id="'+v.uid+'" data-name="'+esc(v.name||'')+'">העברת בעלות</button>';
+        }
       }
     }
     return '<div class="vrow" style="align-items:flex-start; flex-wrap:wrap;">' +
@@ -448,12 +528,12 @@
     var uid = params.uid;
     var mode = params.mode || 'view';
     var isSelf = mode==='self';
-    var v = state.volunteers.find(function(x){ return x.uid===uid; });
+    var v = findUser(uid);
     var html = header(isSelf ? 'הפרופיל שלי' : 'פרופיל מתנדב/ת', {back:true});
     if(!v){
       return wrapScreen(html, '<div class="card-flat"><p class="small">טוען פרופיל…</p></div>');
     }
-    var active = state.requests.some(function(r){ return r.claimedByUid===v.uid && (r.status==='claimed'||r.status==='checked_in'); });
+    var active = !!activeVisitOf(v.uid);
     var body = '<div class="card-flat" style="align-items:center; text-align:center;">' +
       '<div class="avatar avatar-lg">'+esc((v.name||'?').charAt(0))+'</div>' +
       '<span class="card-title" style="font-size:22px;">'+esc(v.name||'')+'</span>' +
@@ -464,13 +544,13 @@
     if(isSelf){
       var langs = v.languages || [];
       body += '<div class="card-flat"><form data-form="edit-profile">' +
-        '<div class="field"><label for="ep-name">שם מלא</label><input id="ep-name" name="name" type="text" required value="'+esc(v.name||'')+'"></div>' +
+        '<div class="field"><label for="ep-name">שם מלא</label><input id="ep-name" name="name" type="text" maxlength="80" required value="'+esc(v.name||'')+'"></div>' +
         '<div class="field" style="margin-top:12px;"><label>שפות דוברות</label>' + languageChecks(langs, 'languages') + '</div>' +
         '<div class="field" style="margin-top:12px;"><label for="ep-avail">זמינות</label><input id="ep-avail" name="availability" type="text" placeholder="לדוגמה: ימי שלישי אחר הצהריים" value="'+esc(v.availability||'')+'"></div>' +
         '<div class="field" style="margin-top:12px;"><label for="ep-bio">רקע</label><textarea id="ep-bio" name="bio" rows="3" placeholder="קצת עליי">'+esc(v.bio||'')+'</textarea></div>' +
         '<button type="submit" class="btn btn-primary btn-block" style="margin-top:14px;">שמירת שינויים</button>' +
       '</form></div>';
-      body += '<button class="btn btn-outline btn-block" data-action="do-logout">התנתקות מהחשבון</button>';
+      if(!state.previewRole) body += '<button class="btn btn-outline btn-block" data-action="do-logout">התנתקות מהחשבון</button>';
     } else {
       var langChips = (v.languages||[]).map(function(l){ return '<span class="chip">'+esc(l)+'</span>'; }).join('');
       body += '<div class="card-flat">' +
@@ -479,7 +559,7 @@
         '<div style="display:flex; flex-direction:column; gap:8px;"><span class="small" style="font-weight:700;">זמינות</span><span style="font-size:14px;">'+esc(v.availability||'לא צויין')+'</span></div>' +
         (v.bio ? '<div class="divider"></div><div style="display:flex; flex-direction:column; gap:8px;"><span class="small" style="font-weight:700;">רקע</span><span style="font-size:14px; line-height:1.55;">'+esc(v.bio)+'</span></div>' : '') +
       '</div>';
-      if(v.role==='volunteer' && !v.disabled){
+      if(v.role==='volunteer' && !v.disabled && !isDeleted(v)){
         body += '<button class="btn btn-primary btn-block" data-action="send-to-volunteer" data-id="'+v.uid+'" data-name="'+esc(v.name||'')+'">שליחת בקשת התנדבות</button>';
       }
     }
@@ -576,22 +656,29 @@
   function screenHours(){
     var html = header('סיכום שעות חודשי', {back:true, sub:new Date().toLocaleDateString('he-IL',{month:'long', year:'numeric'})});
     var body = '';
-    var totals = {};
+    // Only visits that started this calendar month, grouped by volunteer uid
+    // (two volunteers may share a name). The name shown is the current
+    // profile name, falling back to the name stored on the visit.
+    var now = new Date();
+    var totals = {}, names = {};
     state.requests.forEach(function(r){
-      if(r.checkInAt && r.checkOutAt && r.claimedByName){
-        var h = hoursBetween(r.checkInAt, r.checkOutAt);
-        totals[r.claimedByName] = (totals[r.claimedByName]||0) + h;
-      }
+      if(!r.checkInAt || !r.checkOutAt || !r.claimedByUid) return;
+      var start = new Date(r.checkInAt);
+      if(start.getFullYear()!==now.getFullYear() || start.getMonth()!==now.getMonth()) return;
+      totals[r.claimedByUid] = (totals[r.claimedByUid]||0) + hoursBetween(r.checkInAt, r.checkOutAt);
+      var u = findUser(r.claimedByUid);
+      names[r.claimedByUid] = (u && u.name) || r.claimedByName || (u && isDeleted(u) ? 'חשבון שנמחק' : '');
     });
-    var names = Object.keys(totals);
-    if(names.length===0){
-      body += '<div class="empty">⏱️<b>עדיין אין נתוני שעות</b><span>הנתונים יופיעו לאחר סימוני כניסה ויציאה מביקורים.</span></div>';
+    var uids = Object.keys(totals);
+    if(uids.length===0){
+      body += '<div class="empty">⏱️<b>עדיין אין נתוני שעות החודש</b><span>הנתונים יופיעו לאחר סימוני כניסה ויציאה מביקורים.</span></div>';
     } else {
-      names.sort(function(a,b){ return totals[b]-totals[a]; });
-      var max = Math.max.apply(null, names.map(function(n){ return totals[n]; }));
-      var total = names.reduce(function(s,n){ return s+totals[n]; }, 0);
-      var rows = names.map(function(n){
-        var v = Math.round(totals[n]*10)/10;
+      uids.sort(function(a,b){ return totals[b]-totals[a]; });
+      var max = Math.max.apply(null, uids.map(function(id){ return totals[id]; }));
+      var total = uids.reduce(function(s,id){ return s+totals[id]; }, 0);
+      var rows = uids.map(function(id){
+        var n = names[id];
+        var v = Math.round(totals[id]*10)/10;
         var pct = max>0 ? Math.max(6, Math.round((v/max)*100)) : 0;
         return '<div class="stat-row"><span class="stat-name" title="'+esc(n)+'">'+esc(n)+'</span>' +
           '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;"></div></div>' +
@@ -613,9 +700,17 @@
     });
   }
   function doRegister(name, email, pass){
+    // The profile name is passed along explicitly: onAuthStateChanged fires
+    // before updateProfile() finishes, so user.displayName isn't set yet
+    // when the users/{uid} document gets created.
+    pendingRegisterName = name;
     auth.createUserWithEmailAndPassword(email, pass).then(function(cred){
       if(name && cred.user){ cred.user.updateProfile({displayName:name}).catch(function(){}); }
+      if(cred.user && isBootstrapEmail(cred.user.email)){
+        cred.user.sendEmailVerification().catch(function(){});
+      }
     }).catch(function(err){
+      pendingRegisterName = null;
       toast(authErrorMsg(err));
     });
   }
@@ -641,6 +736,7 @@
   function claimRequest(id){
     if(guardPreview()) return;
     if(state.busy['claim-'+id]) return;
+    if(myActiveVisit()){ toast('יש לך כבר ביקור פעיל — סיימו אותו לפני שלוקחים בקשה חדשה'); return; }
     var myId = state.authUser.uid;
     setBusy('claim-'+id, true); render();
     var ref = db.collection('requests').doc(id);
@@ -740,6 +836,10 @@
       toast('נא למלא את כל השדות הנדרשים');
       return;
     }
+    if(volunteerId && activeVisitOf(volunteerId)){
+      toast('למתנדב/ת יש כבר ביקור פעיל — אפשר לשלוח בקשה חדשה רק אחרי שיסתיים');
+      return;
+    }
     var btn = form.querySelector('button[type="submit"]');
     if(btn) btn.disabled = true;
     var now = new Date().toISOString();
@@ -799,37 +899,72 @@
 
   // ---------------- actions: user management ----------------
   function setUserRole(uid, role){
+    if(guardPreview()) return;
     db.collection('users').doc(uid).update({role: role}).then(function(){
       toast('התפקיד עודכן');
     }).catch(function(){ toast('העדכון נכשל, אין הרשאה מספקת'); });
   }
   function disableUser(uid){
+    if(guardPreview()) return;
     db.collection('users').doc(uid).update({disabled: true}).then(function(){
       toast('החשבון הושבת');
     }).catch(function(){ toast('הפעולה נכשלה, אין הרשאה מספקת'); });
   }
   function enableUser(uid){
+    if(guardPreview()) return;
     db.collection('users').doc(uid).update({disabled: false}).then(function(){
       toast('החשבון שוחזר');
     }).catch(function(){ toast('הפעולה נכשלה, אין הרשאה מספקת'); });
   }
-  function createManager(name, email, pass){
-    state.newManagerBusy = true; render();
+  // Permanent deletion of an already-disabled account. All personal data is
+  // wiped and only a tombstone {uid, role, disabled, deleted} remains, which
+  // firestore.rules never lets anyone change again — so the account can't be
+  // restored, and signing in with it again just signs the person out.
+  function deleteUserForever(uid){
+    if(guardPreview()) return;
+    var u = findUser(uid);
+    if(!u || !u.disabled){ toast('אפשר למחוק לצמיתות רק חשבון מושבת'); return; }
+    db.collection('users').doc(uid).set({
+      uid: uid, role: u.role, disabled: true, deleted: true, deletedAt: new Date().toISOString()
+    }).then(function(){
+      toast('החשבון נמחק לצמיתות');
+    }).catch(function(){ toast('המחיקה נכשלה, אין הרשאה מספקת'); });
+  }
+  // Hands ownership to an admin: they become the owner, the current owner
+  // becomes an admin. One atomic batch, so there's always exactly one owner.
+  function transferOwnership(uid){
+    if(guardPreview()) return;
+    var me = state.authUser.uid;
+    var batch = db.batch();
+    batch.update(db.collection('users').doc(uid), {role: 'owner'});
+    batch.update(db.collection('users').doc(me), {role: 'admin'});
+    batch.update(db.collection('meta').doc('owner'), {uid: uid, since: new Date().toISOString()});
+    batch.commit().then(function(){
+      toast('הבעלות הועברה בהצלחה');
+      state.stack = [{screen: homeScreen(), params:{}}];
+      render();
+    }).catch(function(){ toast('העברת הבעלות נכשלה, אין הרשאה מספקת'); });
+  }
+  function createAccount(role, name, email, pass){
+    if(guardPreview()) return;
+    if(rankOf(role) >= myRank() || role==='owner'){ toast('אין הרשאה ליצור חשבון בתפקיד הזה'); return; }
+    state.newAccountBusy = true; render();
     var secAuth = getSecondaryAuth();
     secAuth.createUserWithEmailAndPassword(email, pass).then(function(cred){
       var uid = cred.user.uid;
       return db.collection('users').doc(uid).set({
-        uid: uid, email: email, name: name, role: 'manager', disabled: false,
+        uid: uid, email: email, name: name, role: role, disabled: false,
         languages: [], availability: '', bio: '', createdAt: new Date().toISOString()
       }).then(function(){
         return secAuth.signOut();
       });
     }).then(function(){
-      toast('חשבון המנהל/ת נוצר בהצלחה');
-      state.newManagerBusy = false; render();
+      toast('החשבון ('+ROLE_LABELS[role]+') נוצר בהצלחה');
+      state.newAccountBusy = false;
+      keepFields = false; render();
     }).catch(function(err){
       toast(authErrorMsg(err));
-      state.newManagerBusy = false; render();
+      state.newAccountBusy = false; render();
     });
   }
 
@@ -867,7 +1002,8 @@
     } else if(action==='delete-request'){
       if(confirm('למחוק את הבקשה הזו לצמיתות?')) deleteRequest(btn.dataset.id);
     } else if(action==='resume-visit'){
-      push('scan', {requestId: btn.dataset.id});
+      var rv = state.requests.find(function(x){ return x.id===btn.dataset.id; });
+      push(rv && rv.status==='checked_out' ? 'feedback' : 'scan', {requestId: btn.dataset.id});
     } else if(action==='claim-request'){
       claimRequest(btn.dataset.id);
     } else if(action==='check-in'){
@@ -879,11 +1015,19 @@
     } else if(action==='set-recurring'){
       state.feedbackChoice[btn.dataset.id] = btn.dataset.value; render();
     } else if(action==='set-role'){
-      if(confirm('לשנות את התפקיד?')) setUserRole(btn.dataset.id, btn.dataset.role);
+      if(guardPreview()) return;
+      if(confirm('לשנות את התפקיד ל'+(ROLE_LABELS[btn.dataset.role]||'')+'?')) setUserRole(btn.dataset.id, btn.dataset.role);
     } else if(action==='disable-user'){
-      if(confirm('להשבית/למחוק את החשבון?')) disableUser(btn.dataset.id);
+      if(guardPreview()) return;
+      if(confirm('להשבית את החשבון? ניתן יהיה לשחזר אותו או למחוק אותו לצמיתות מאוחר יותר.')) disableUser(btn.dataset.id);
     } else if(action==='enable-user'){
       enableUser(btn.dataset.id);
+    } else if(action==='delete-user'){
+      if(guardPreview()) return;
+      if(confirm('למחוק לצמיתות את החשבון של '+btn.dataset.name+'?\n\nכל הפרטים האישיים יימחקו, ולא ניתן יהיה לשחזר את החשבון בשום דרך.')) deleteUserForever(btn.dataset.id);
+    } else if(action==='transfer-owner'){
+      if(guardPreview()) return;
+      if(confirm('להעביר את הבעלות ל'+btn.dataset.name+'?\n\n'+btn.dataset.name+' י/תהפוך לבעלים היחיד/ה של המערכת, ואת/ה תהפוך/י לאדמין ראשי. רק הבעלים החדש/ה יוכל/תוכל להחזיר את הבעלות.')) transferOwnership(btn.dataset.id);
     } else if(action==='preview-as'){
       enterPreview(btn.dataset.role);
     } else if(action==='exit-preview'){
@@ -920,13 +1064,14 @@
       submitSendRequest(form);
     } else if(kind==='edit-request'){
       submitEditRequest(form);
-    } else if(kind==='new-manager'){
+    } else if(kind==='new-account'){
       var fd2 = new FormData(form);
+      var mrole = (fd2.get('role')||'').toString();
       var mname = (fd2.get('name')||'').toString().trim();
       var memail = (fd2.get('email')||'').toString().trim();
       var mpass = (fd2.get('pass')||'').toString();
-      if(!mname || !memail || !mpass){ toast('נא למלא את כל השדות'); return; }
-      createManager(mname, memail, mpass);
+      if(!mrole || !mname || !memail || !mpass){ toast('נא למלא את כל השדות'); return; }
+      createAccount(mrole, mname, memail, mpass);
     }
   });
 
@@ -942,47 +1087,117 @@
   function screenNeedsVolunteersLive(){
     var top = state.stack[state.stack.length-1];
     if(!top) return false;
-    return ['volunteerList','manageUsers','profile'].indexOf(top.screen) > -1;
+    return ['volunteerList','manageUsers','profile','hours'].indexOf(top.screen) > -1;
   }
 
+  // Staff listen to every request and every user. Volunteers may only read
+  // open requests and their own (see firestore.rules), so they get two
+  // narrower listeners merged together, and no users listener at all.
   function attachLiveData(){
-    if(unsubRequests) unsubRequests();
-    if(unsubVolunteers) unsubVolunteers();
-    unsubRequests = db.collection('requests').orderBy('createdAt','desc').onSnapshot(function(snap){
-      state.requests = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
-      state.requestsLoaded = true;
-      if(screenNeedsRequestsLive()) render();
-    }, function(){ state.requestsLoaded = true; });
-    unsubVolunteers = db.collection('users').orderBy('createdAt','desc').onSnapshot(function(snap){
-      state.volunteers = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+    detachListListeners();
+    var staff = isStaff();
+    state.liveStaff = staff;
+    if(staff){
+      unsubRequests.push(db.collection('requests').orderBy('createdAt','desc').onSnapshot(function(snap){
+        state.requests = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+        state.requestsLoaded = true;
+        if(screenNeedsRequestsLive()) render();
+      }, function(){ state.requestsLoaded = true; }));
+      unsubVolunteers = db.collection('users').orderBy('createdAt','desc').onSnapshot(function(snap){
+        state.volunteers = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+        state.volunteersLoaded = true;
+        if(screenNeedsVolunteersLive()) render();
+      }, function(){ state.volunteersLoaded = true; });
+    } else {
+      var parts = {open: null, mine: null};
+      var merge = function(){
+        if(!parts.open || !parts.mine) return;
+        var byId = {};
+        parts.open.concat(parts.mine).forEach(function(r){ byId[r.id] = r; });
+        state.requests = Object.keys(byId).map(function(id){ return byId[id]; }).sort(function(a,b){
+          return (b.createdAt||'').localeCompare(a.createdAt||'');
+        });
+        state.requestsLoaded = true;
+        if(screenNeedsRequestsLive()) render();
+      };
+      var listen = function(key, query){
+        unsubRequests.push(query.onSnapshot(function(snap){
+          parts[key] = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
+          merge();
+        }, function(){ parts[key] = parts[key] || []; merge(); }));
+      };
+      listen('open', db.collection('requests').where('status','==','open'));
+      listen('mine', db.collection('requests').where('claimedByUid','==',state.authUser.uid));
+      state.volunteers = [];
       state.volunteersLoaded = true;
-      if(screenNeedsVolunteersLive()) render();
-    }, function(){ state.volunteersLoaded = true; });
+    }
   }
-  function detachLiveData(){
-    if(unsubRequests){ unsubRequests(); unsubRequests=null; }
+  function detachListListeners(){
+    unsubRequests.forEach(function(u){ u(); });
+    unsubRequests = [];
     if(unsubVolunteers){ unsubVolunteers(); unsubVolunteers=null; }
-    if(unsubProfile){ unsubProfile(); unsubProfile=null; }
     state.requests=[]; state.requestsLoaded=false;
     state.volunteers=[]; state.volunteersLoaded=false;
+  }
+  function detachLiveData(){
+    detachListListeners();
+    if(unsubProfile){ unsubProfile(); unsubProfile=null; }
     state.profile=null; state.profileLoaded=false;
+    state.previewRole=null;
   }
 
+  function isBootstrapEmail(email){
+    return !!email && email.toLowerCase()===String(ADMIN_EMAIL).toLowerCase();
+  }
+  function newProfile(user, role){
+    var name = (pendingRegisterName || user.displayName || (user.email ? user.email.split('@')[0] : '') || 'משתמש/ת').slice(0, 80);
+    return {
+      uid: user.uid,
+      email: user.email || '',
+      name: name,
+      role: role,
+      disabled: false,
+      languages: [], availability: '', bio: '',
+      createdAt: new Date().toISOString()
+    };
+  }
+  // Creates users/{uid} on first sign-in. The bootstrap email (ADMIN_EMAIL)
+  // becomes the owner — only once its address is verified, and only while
+  // no owner exists yet (meta/owner). That also upgrades an account that
+  // already existed from before the owner role was introduced.
   function ensureUserDoc(user){
     var ref = db.collection('users').doc(user.uid);
-    return ref.get().then(function(snap){
-      if(snap.exists) return;
-      var role = (user.email && user.email.toLowerCase()===ADMIN_EMAIL.toLowerCase()) ? 'admin' : 'volunteer';
-      return ref.set({
-        uid: user.uid,
-        email: user.email || '',
-        name: user.displayName || (user.email ? user.email.split('@')[0] : 'משתמש/ת'),
-        role: role,
-        disabled: false,
-        languages: [], availability: '', bio: '',
-        createdAt: new Date().toISOString()
+    var boot = isBootstrapEmail(user.email);
+    // After clicking the verification link, the cached ID token (which is
+    // what firestore.rules sees) may still say email_verified=false, so
+    // refresh it whenever it disagrees with the account.
+    var refresh = boot
+      ? user.reload().then(function(){ return user.getIdTokenResult(); }).then(function(tok){
+          if(user.emailVerified && !tok.claims.email_verified) return user.getIdToken(true);
+        }).catch(function(){})
+      : Promise.resolve();
+    return refresh.then(function(){ return ref.get(); }).then(function(snap){
+      if(snap.exists && snap.data().deleted) return;
+      if(!boot || !user.emailVerified){
+        if(boot){ toast('כדי לקבל הרשאות בעלים יש לאמת את כתובת האימייל (נשלח אליך קישור) ולהתחבר מחדש'); }
+        if(!snap.exists) return ref.set(newProfile(user, 'volunteer'));
+        return;
+      }
+      var ownerRef = db.collection('meta').doc('owner');
+      return ownerRef.get().then(function(owner){
+        if(owner.exists){
+          if(!snap.exists) return ref.set(newProfile(user, 'volunteer'));
+          return;
+        }
+        var batch = db.batch();
+        if(snap.exists) batch.update(ref, {role:'owner'});
+        else batch.set(ref, newProfile(user, 'owner'));
+        batch.set(ownerRef, {uid: user.uid, since: new Date().toISOString()});
+        return batch.commit().catch(function(){
+          if(!snap.exists) return ref.set(newProfile(user, 'volunteer'));
+        });
       });
-    });
+    }).then(function(){ pendingRegisterName = null; });
   }
 
   auth.onAuthStateChanged(function(user){
@@ -999,17 +1214,29 @@
       unsubProfile = db.collection('users').doc(user.uid).onSnapshot(function(snap){
         if(!snap.exists) return;
         var data = snap.data();
+        if(data.deleted){
+          toast('החשבון נמחק לצמיתות על ידי מנהל/ת המערכת');
+          auth.signOut();
+          return;
+        }
         if(data.disabled){
           toast('החשבון הושבת על ידי מנהל/ת המערכת');
           auth.signOut();
           return;
         }
         var hadProfile = !!state.profile;
+        var oldRole = myRole();
         state.profile = data;
         state.profileLoaded = true;
         if(!hadProfile){
           state.stack = [{screen: homeScreen(), params:{}}];
           attachLiveData();
+        } else if(oldRole !== data.role){
+          // Role changed while signed in (promotion, demotion, ownership
+          // transfer): drop any preview and reload data at the new access level.
+          state.previewRole = null;
+          state.stack = [{screen: homeScreen(), params:{}}];
+          if(state.liveStaff !== isStaff()) attachLiveData();
         }
         render();
       }, function(){
