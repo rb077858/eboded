@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>מחיקת חשבון — אי בודד</title>
+<script>
+  // Relative paths below need the trailing slash (/accountdelete/).
+  if(!/\/$/.test(location.pathname)) location.replace(location.pathname + '/' + location.search + location.hash);
+</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="../css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div class="scr-header">
+      <div class="scr-header-row"><h1 class="scr-title">מחיקת חשבון</h1></div>
+      <span class="scr-sub" style="padding-right:0;">אפליקציית "אי בודד"</span>
+    </div>
+    <div class="view-body">
+      <div class="card-flat">
+        <span class="card-title" style="font-size:15px;">מה נמחק</span>
+        <p class="small" style="margin:0; line-height:1.6;">
+          מחיקת החשבון היא <b>סופית ולא ניתנת לשחזור</b>. נמחקים: השם, כתובת האימייל, השפות, הזמינות, הרקע
+          וחשבון ההתחברות עצמו (האימייל והסיסמה, או הקישור לחשבון Google).
+        </p>
+        <p class="small" style="margin:0; line-height:1.6;">
+          <b>מה נשמר:</b> רישומי ביקורים שכבר התקיימו (כולל השם שנרשם בהם וזמני הביקור) נשמרים לצורך סיכומי
+          שעות ההתנדבות של בית החולים. פרטים נוספים ב<a href="../privacy.html">מדיניות הפרטיות</a>.
+        </p>
+        <p class="small" style="margin:0; line-height:1.6;">
+          אפשר למחוק את החשבון בעצמכם כאן למטה, או לבקש מחיקה במייל:
+          <a href="mailto:rb077858@gmail.com">rb077858@gmail.com</a>.
+        </p>
+      </div>
+      <div id="ad-state"><div class="empty"><b>טוען…</b></div></div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+
+  <script src="../js/firebase-config.js"></script>
+  <script src="../js/account-delete.js"></script>
+</body>
+</html>

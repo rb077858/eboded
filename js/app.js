@@ -357,6 +357,7 @@
                   '<button class="icon-btn" data-action="go-all-requests" aria-label="כל הבקשות">'+listSvg()+'</button>' +
                   '<button class="icon-btn" data-action="go-hours" aria-label="סיכום שעות">'+statsSvg()+'</button>' +
                   '<button class="icon-btn" data-action="go-manage-users" aria-label="ניהול משתמשים">'+gearSvg()+'</button>' +
+                  '<button class="icon-btn" data-action="go-my-profile" aria-label="הפרופיל שלי">'+personSvg()+'</button>' +
                   (!state.previewRole ? '<button class="icon-btn" data-action="do-logout" aria-label="התנתקות">'+logoutSvg()+'</button>' : '');
     var html = header('רשימת המתנדבים', {actions:actions});
     var body = '<div class="banner-info">בלחיצה על שם מתנדב/ת ייפתח הפרופיל המלא &mdash; חשוף לצוות בלבד</div>';
@@ -550,7 +551,16 @@
         '<div class="field" style="margin-top:12px;"><label for="ep-bio">רקע</label><textarea id="ep-bio" name="bio" rows="3" placeholder="קצת עליי">'+esc(v.bio||'')+'</textarea></div>' +
         '<button type="submit" class="btn btn-primary btn-block" style="margin-top:14px;">שמירת שינויים</button>' +
       '</form></div>';
-      if(!state.previewRole) body += '<button class="btn btn-outline btn-block" data-action="do-logout">התנתקות מהחשבון</button>';
+      if(!state.previewRole){
+        body += '<button class="btn btn-outline btn-block" data-action="do-logout">התנתקות מהחשבון</button>';
+        // Deletion itself lives on its own page (also reachable from outside
+        // the app, e.g. from a store listing).
+        if(v.role==='owner'){
+          body += '<p class="hint" style="text-align:center;">כדי למחוק את חשבון הבעלים יש קודם להעביר את הבעלות לאדמין ראשי אחר (במסך ניהול משתמשים).</p>';
+        } else {
+          body += '<a class="link-btn" style="align-self:center; color:var(--danger);" href="accountdelete/">מחיקת החשבון שלי</a>';
+        }
+      }
     } else {
       var langChips = (v.languages||[]).map(function(l){ return '<span class="chip">'+esc(l)+'</span>'; }).join('');
       body += '<div class="card-flat">' +
@@ -1215,7 +1225,7 @@
         if(!snap.exists) return;
         var data = snap.data();
         if(data.deleted){
-          toast('החשבון נמחק לצמיתות על ידי מנהל/ת המערכת');
+          toast('החשבון נמחק לצמיתות');
           auth.signOut();
           return;
         }

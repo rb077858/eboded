@@ -147,6 +147,17 @@ service cloud.firestore {
           && request.resource.data.disabled == true
           && request.resource.data.deleted == true)
 
+        // deleting your OWN account (also while disabled) — same tombstone.
+        // The owner can't: ownership must be transferred first, so there is
+        // always an owner.
+        || (request.auth.uid == userId
+          && resource.data.role != 'owner'
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'disabled', 'deleted', 'deletedAt'])
+          && request.resource.data.uid == userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.disabled == true
+          && request.resource.data.deleted == true)
+
         // ownership transfer, target side: an active admin becomes owner
         || (isOwner()
           && request.auth.uid != userId
