@@ -2,75 +2,206 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ---- role hierarchy ----
+    // owner (exactly one)  >  admin  >  manager  >  volunteer
+    // Everyone may manage only people strictly below their own rank.
+    // The single owner is recorded in meta/owner; the 'owner' role on a user
+    // document can only be set/cleared together with that record (see the
+    // bootstrap and ownership-transfer rules below), which is what keeps
+    // there being exactly one owner at all times.
+
     // ---- helpers ----
     function isSignedIn() { return request.auth != null; }
-    function myData() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function myRole() { return isSignedIn() ? myData().role : null; }
-    function isAdmin() { return myRole() == 'admin'; }
-    function isManager() { return myRole() == 'manager' || isAdmin(); }
-    function amActiveVolunteer() { return isSignedIn() && myData().disabled != true; }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function ownerPath() { return /databases/$(database)/documents/meta/owner; }
+    function hasProfile() { return isSignedIn() && exists(userPath(request.auth.uid)); }
+    function myData() { return get(userPath(request.auth.uid)).data; }
+    function isActive() {
+      return hasProfile()
+        && myData().get('disabled', false) != true
+        && myData().get('deleted', false) != true;
+    }
+    function rank(role) { return {'owner': 3, 'admin': 2, 'manager': 1, 'volunteer': 0}.get(role, 0); }
+    function myRank() { return isActive() ? rank(myData().role) : -1; }
+    function isStaff() { return myRank() >= 1; }
+    function isOwner() {
+      return isActive()
+        && myData().role == 'owner'
+        && exists(ownerPath())
+        && get(ownerPath()).data.uid == request.auth.uid;
+    }
+    function changedKeys() { return request.resource.data.diff(resource.data).affectedKeys(); }
 
-    // The one email that is always allowed to bootstrap as admin the very
-    // first time it signs in. Keep this in sync with ADMIN_EMAIL in
-    // js/firebase-config.js. After the first sign-in, admin rights are
-    // reassignable from inside the app (Admin panel), and this literal is
-    // only used for that first bootstrap document.
-    function bootstrapRole() {
-      return request.auth.token.email == 'rb077858@gmail.com' ? 'admin' : 'volunteer';
+    // The one email that may become the first owner. Keep in sync with
+    // ADMIN_EMAIL in js/firebase-config.js. The email must be VERIFIED
+    // (Google sign-in is verified automatically; a password sign-up must
+    // click the verification link first), otherwise anyone could register
+    // this address with a password and take ownership.
+    function isBootstrapEmail() {
+      return isSignedIn()
+        && request.auth.token.get('email', '').lower() == 'rb077858@gmail.com'
+        && request.auth.token.get('email_verified', false) == true;
+    }
+
+    function validName(n) { return n is string && n.size() > 0 && n.size() <= 80; }
+    function validNewProfile(userId) {
+      let d = request.resource.data;
+      return d.keys().hasAll(['uid', 'email', 'name', 'role', 'disabled'])
+        && d.keys().hasOnly(['uid', 'email', 'name', 'role', 'disabled', 'languages', 'availability', 'bio', 'createdAt'])
+        && d.uid == userId
+        && d.disabled == false
+        && validName(d.name);
+    }
+
+    // ---- ownership record ----
+    match /meta/owner {
+      allow read: if isSignedIn();
+
+      // First owner ever: the bootstrap email, in the same batch that gives
+      // their own user document the 'owner' role.
+      allow create: if isBootstrapEmail()
+        && request.resource.data.keys().hasOnly(['uid', 'since'])
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(userPath(request.auth.uid)).data.role == 'owner';
+
+      // Ownership transfer: the current owner hands it to an admin, in the
+      // same batch that makes the target 'owner' and themself 'admin'.
+      allow update: if isOwner()
+        && request.resource.data.keys().hasOnly(['uid', 'since'])
+        && request.resource.data.uid != request.auth.uid
+        && getAfter(userPath(request.resource.data.uid)).data.role == 'owner'
+        && getAfter(userPath(request.auth.uid)).data.role == 'admin';
+
+      allow delete: if false;
     }
 
     // ---- users ----
     match /users/{userId} {
-      allow read: if isSignedIn();
+      // Everyone can read their own document (also when disabled/deleted, so
+      // the app can tell them why they were signed out). Only staff can read
+      // other people's documents (names, emails, availability…).
+      allow read: if isSignedIn() && (request.auth.uid == userId || isStaff());
 
-      // A signed-in person creating their OWN profile document
-      // (self-registration / first Google sign-in / bootstrap admin).
+      // Self-registration (password sign-up / first Google sign-in).
       allow create: if isSignedIn()
         && request.auth.uid == userId
-        && request.resource.data.uid == userId
-        && request.resource.data.role == bootstrapRole()
-        && request.resource.data.disabled == false;
+        && validNewProfile(userId)
+        && request.resource.data.email == request.auth.token.get('email', '')
+        && (
+          request.resource.data.role == 'volunteer'
+          || (request.resource.data.role == 'owner'
+              && isBootstrapEmail()
+              && !exists(ownerPath())
+              && getAfter(ownerPath()).data.uid == userId)
+        );
 
-      // The admin creating someone else's profile document
-      // (used when the admin creates a new department-manager account).
-      allow create: if isAdmin()
-        && request.resource.data.uid == userId
-        && request.resource.data.role in ['volunteer', 'manager']
-        && request.resource.data.disabled == false;
+      // Owner / admin creating someone else's account, below their own rank.
+      allow create: if myRank() >= 2
+        && request.auth.uid != userId
+        && validNewProfile(userId)
+        && request.resource.data.role in ['admin', 'manager', 'volunteer']
+        && rank(request.resource.data.role) < myRank();
 
-      allow update: if isAdmin()
-        || (isManager()
-            && resource.data.role == 'volunteer'
-            && request.resource.data.role == 'volunteer')
+      // A permanently deleted account can never be changed again.
+      allow update: if resource.data.get('deleted', false) != true && (
+        // editing your own profile details
+        (request.auth.uid == userId
+          && isActive()
+          && changedKeys().hasOnly(['name', 'languages', 'availability', 'bio'])
+          && validName(request.resource.data.name))
+
+        // the bootstrap email claiming ownership for the very first time
+        // (also upgrades an account that already exists from before)
         || (request.auth.uid == userId
-            && request.resource.data.role == resource.data.role
-            && request.resource.data.disabled == resource.data.disabled);
+          && isBootstrapEmail()
+          && !exists(ownerPath())
+          && resource.data.get('disabled', false) != true
+          && changedKeys().hasOnly(['role'])
+          && request.resource.data.role == 'owner'
+          && getAfter(ownerPath()).data.uid == userId)
 
-      allow delete: if isAdmin();
+        // disabling / restoring someone below you
+        || (isActive()
+          && request.auth.uid != userId
+          && myRank() > rank(resource.data.role)
+          && changedKeys().hasOnly(['disabled'])
+          && request.resource.data.disabled is bool)
+
+        // changing the role of someone below you, to a role below you
+        || (isActive()
+          && request.auth.uid != userId
+          && myRank() > rank(resource.data.role)
+          && changedKeys().hasOnly(['role'])
+          && request.resource.data.role in ['admin', 'manager', 'volunteer']
+          && rank(request.resource.data.role) < myRank())
+
+        // permanent deletion of an already-disabled account below you:
+        // personal data is wiped, only a tombstone remains
+        || (isActive()
+          && request.auth.uid != userId
+          && myRank() > rank(resource.data.role)
+          && resource.data.get('disabled', false) == true
+          && request.resource.data.keys().hasOnly(['uid', 'role', 'disabled', 'deleted', 'deletedAt'])
+          && request.resource.data.uid == userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.disabled == true
+          && request.resource.data.deleted == true)
+
+        // ownership transfer, target side: an active admin becomes owner
+        || (isOwner()
+          && request.auth.uid != userId
+          && resource.data.role == 'admin'
+          && resource.data.get('disabled', false) != true
+          && changedKeys().hasOnly(['role'])
+          && request.resource.data.role == 'owner'
+          && getAfter(ownerPath()).data.uid == userId)
+
+        // ownership transfer, owner side: the old owner becomes admin
+        || (isOwner()
+          && request.auth.uid == userId
+          && changedKeys().hasOnly(['role'])
+          && request.resource.data.role == 'admin'
+          && getAfter(ownerPath()).data.uid != userId
+          && getAfter(userPath(getAfter(ownerPath()).data.uid)).data.role == 'owner')
+      );
+
+      // Documents are never removed: a deleted account keeps a tombstone so
+      // that signing in again can't silently recreate it.
+      allow delete: if false;
     }
 
     // ---- requests ----
     match /requests/{reqId} {
-      allow read: if isSignedIn();
-      allow create: if isManager();
-      allow delete: if isManager();
+      // Staff see everything. Volunteers see open requests and their own.
+      allow read: if isStaff()
+        || (isActive() && (resource.data.status == 'open'
+                           || resource.data.claimedByUid == request.auth.uid));
+      allow create: if isStaff();
+      allow delete: if isStaff();
 
-      allow update: if isManager()
+      allow update: if isStaff()
         || (
-          // a volunteer claiming an open request for themselves
-          amActiveVolunteer() &&
+          // a volunteer claiming an open request for themselves — and
+          // touching nothing but the claim fields
+          isActive() &&
           resource.data.status == 'open' &&
           request.resource.data.status == 'claimed' &&
-          request.resource.data.claimedByUid == request.auth.uid
+          request.resource.data.claimedByUid == request.auth.uid &&
+          request.resource.data.claimedByName == myData().name &&
+          changedKeys().hasOnly(['status', 'claimedByUid', 'claimedByName', 'claimedAt'])
         )
         || (
           // the volunteer who claimed it moving it through check-in /
-          // check-out / done, one step at a time
-          amActiveVolunteer() &&
+          // check-out / done, one step at a time, only touching that step's
+          // fields
+          isActive() &&
           resource.data.claimedByUid == request.auth.uid && (
-            (resource.data.status == 'claimed' && request.resource.data.status == 'checked_in') ||
-            (resource.data.status == 'checked_in' && request.resource.data.status == 'checked_out') ||
-            (resource.data.status == 'checked_out' && request.resource.data.status == 'done')
+            (resource.data.status == 'claimed' && request.resource.data.status == 'checked_in'
+              && changedKeys().hasOnly(['status', 'checkInAt'])) ||
+            (resource.data.status == 'checked_in' && request.resource.data.status == 'checked_out'
+              && changedKeys().hasOnly(['status', 'checkOutAt'])) ||
+            (resource.data.status == 'checked_out' && request.resource.data.status == 'done'
+              && changedKeys().hasOnly(['status', 'feedbackText', 'recurring', 'feedbackAt']))
           )
         );
     }
