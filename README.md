@@ -128,6 +128,7 @@ Authorized domains** ב-Firebase Console ולוודא שהדומיין של הא
 
 ```
 index.html              דף האתר היחיד (SPA)
+privacy.html            מדיניות פרטיות (עמוד עצמאי, לא מקושר מהאפליקציה)
 css/styles.css           כל העיצוב
 js/firebase-config.js    קונפיגורציית Firebase + ADMIN_EMAIL — למלא בשלב 1
 js/app.js                כל לוגיקת האפליקציה
